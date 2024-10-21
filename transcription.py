@@ -4,9 +4,11 @@ import noisereduce as nr
 from nara_wpe.wpe import wpe
 from nara_wpe.utils import stft, istft
 import numpy as np
+import torch
+from audio_denoiser.AudioDenoiser import AudioDenoiser
 from openai import OpenAI
 import soundfile as sf
-from tqdm.auto import trange
+from tqdm.auto import trange, tqdm
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -54,19 +56,23 @@ def reduce_noise(input_wav, output_folder):
     stft_options = {"size": 512, "shift": 128}
 
     # Apply dereverberation
-    reduced_noise = nr.reduce_noise(y=data, sr=rate, prop_decrease = 0.2, n_std_thresh_stationary = 2.5, n_fft = n_fft)
-    print("Dereverberation...")
+    #reduced_noise = nr.reduce_noise(y=data, sr=rate, prop_decrease = 0.2, n_std_thresh_stationary = 2.5, n_fft = n_fft)
+    denoiser = AudioDenoiser(device=torch.device("cpu"))
+    print("Splitting...")
 
     # Split in multiple files
     framestep = 10**7
-    T = reduced_noise.shape[0]
+    T = data.shape[0]
     file_list = [
-        dereverberate(reduced_noise[t:t+framestep], stft_options = stft_options, taps = taps, delay = delay, iterations = iterations)
+        data[t:t+framestep]
+        #dereverberate(reduced_noise[t:t+framestep], stft_options = stft_options, taps = taps, delay = delay, iterations = iterations)
     for t in trange(0, T, framestep)]
     
     # Save the reduced noise audio to a new file
-    for i,segment in enumerate(file_list):
-        sf.write(os.path.join(output_folder, f"denoised_{i}.wav"), segment, rate)
+    for i,segment in tqdm(enumerate(file_list), desc = "Denoising..."):
+        filepath = os.path.join(output_folder, f"denoised_{i}.wav")
+        sf.write(filepath, segment, rate)
+        denoiser.process_audio_file(filepath, filepath, auto_scale=True)
 
     return output_folder
 
