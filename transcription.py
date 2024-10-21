@@ -1,9 +1,12 @@
 import os
 from pydub import AudioSegment
 import noisereduce as nr
+from nara_wpe.wpe import wpe
+from nara_wpe.utils import stft, istft
 import numpy as np
 from openai import OpenAI
 import soundfile as sf
+from tqdm.auto import trange
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -24,6 +27,17 @@ def convert_m4a_to_wav(input_file, output_file):
     audio.export(output_file, format="wav")
     return output_file
 
+def dereverberate(X, stft_options, **kwargs):
+    Y = stft(X.reshape((1, -1)), **stft_options).transpose(2, 0, 1)
+    Z = wpe(
+        Y,
+        statistics_mode='full',
+        **kwargs
+    ).transpose(1, 2, 0)
+    z = istft(Z, size=stft_options['size'], shift=stft_options['shift']).reshape(-1)
+
+    return z
+
 # Step 2: Reduce background noise using noisereduce
 def reduce_noise(input_wav, output_folder):
     # Load audio data
@@ -32,12 +46,23 @@ def reduce_noise(input_wav, output_folder):
     print("Sample rate:", rate)
     
     # Reduce noise
-    reduced_noise = nr.reduce_noise(y=data, sr=rate, prop_decrease = 0.2, n_std_thresh_stationary = 2.5, n_fft = 1024)
+    # Parameters for dereverberation
+    n_fft = 1024
+    taps = 10
+    delay = 5
+    iterations = 5
+    stft_options = {"size": 512, "shift": 128}
+
+    # Apply dereverberation
+    reduced_noise = nr.reduce_noise(y=data, sr=rate, prop_decrease = 0.2, n_std_thresh_stationary = 2.5, n_fft = n_fft)
+    print("Dereverberation...")
 
     # Split in multiple files
     framestep = 10**7
     T = reduced_noise.shape[0]
-    file_list = [reduced_noise[t:t+framestep] for t in range(0, T, framestep)]
+    file_list = [
+        dereverberate(reduced_noise[t:t+framestep], stft_options = stft_options, taps = taps, delay = delay, iterations = iterations)
+    for t in trange(0, T, framestep)]
     
     # Save the reduced noise audio to a new file
     for i,segment in enumerate(file_list):
@@ -86,7 +111,7 @@ if __name__ == "__main__":
     transcribed_segments = []
     for file in os.listdir(noise_reduced_folder):
         file_number = int(file.split(".")[0].split("_")[-1])
-        transcription = transcribe_audio(os.path.join(folder, file), language=args.lang)
+        transcription = transcribe_audio(os.path.join(noise_reduced_folder, file), language=args.lang)
         transcribed_segments.append((file_number, transcription))
 
     # Output the transcription
