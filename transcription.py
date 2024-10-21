@@ -16,6 +16,8 @@ parser.add_argument("--file", type = str, required=True,
                     help = "Audio file to be transcribed.")
 parser.add_argument("--lang", type = str, required = True,
                     help = "Audio Language.")
+parser.add_argument("--step", type = int, default = 10**7,
+                    help = "Frame step to split the audio file.")
 args = parser.parse_args()
 
 # Set OpenAI API key (replace 'your-api-key' with your actual API key)
@@ -41,19 +43,11 @@ def dereverberate(X, stft_options, **kwargs):
     return z
 
 # Step 2: Reduce background noise using noisereduce
-def reduce_noise(input_wav, output_folder):
+def reduce_noise(input_wav, output_folder, framestep):
     # Load audio data
     data, rate = sf.read(input_wav)
     print("Data shape (frames x channels):", data.shape)
     print("Sample rate:", rate)
-    
-    # Reduce noise
-    # Parameters for dereverberation
-    n_fft = 1024
-    taps = 10
-    delay = 5
-    iterations = 5
-    stft_options = {"size": 512, "shift": 128}
 
     # Apply dereverberation
     #reduced_noise = nr.reduce_noise(y=data, sr=rate, prop_decrease = 0.2, n_std_thresh_stationary = 2.5, n_fft = n_fft)
@@ -61,7 +55,6 @@ def reduce_noise(input_wav, output_folder):
     print("Splitting...")
 
     # Split in multiple files
-    framestep = 10**7
     T = data.shape[0]
     file_list = [
         data[t:t+framestep]
@@ -110,7 +103,7 @@ if __name__ == "__main__":
 
     # Step 2: Reduce background noise
     print("Reducing background noise...")
-    reduce_noise(temp_wav, noise_reduced_folder)
+    reduce_noise(temp_wav, noise_reduced_folder, framestep=args.step)
 
     # Step 3: Transcribe the cleaned audio using Whisper API
     print("Transcribing audio...")
@@ -126,15 +119,12 @@ if __name__ == "__main__":
     with open(os.path.join("transcriptions", filename + ".txt"), "w") as f:
         f.write(full_text)
 
-    # Cleanup: Remove temporary wav files if needed
-    os.remove(temp_wav)
-
     # Summarization
     if args.lang == "it":
-        prompt = "Riassumi il seguente documento"
+        prompt = "Riassumi in dettaglio il seguente documento"
     else:
-        prompt = "Summarize the following document"
-        
+        prompt = "Summarize in detail the following document"
+
     response = OPENAI_CLIENT.chat.completions.create(
         model = "gpt-4o-mini",
         messages = [
