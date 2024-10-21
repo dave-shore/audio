@@ -122,8 +122,29 @@ if __name__ == "__main__":
 
     # Output the transcription
     transcribed_segments = list(map(lambda tup: tup[-1], sorted(transcribed_segments, key = lambda tup: tup[0])))
+    full_text = "\n".join(transcribed_segments)
     with open(os.path.join("transcriptions", filename + ".txt"), "w") as f:
-        f.write("\n".join(transcribed_segments))
+        f.write(full_text)
 
     # Cleanup: Remove temporary wav files if needed
     os.remove(temp_wav)
+
+    # Summarization
+    if args.lang == "it":
+        prompt = "Riassumi il seguente documento"
+    else:
+        prompt = "Summarize the following document"
+        
+    response = OPENAI_CLIENT.chat.completions.create(
+        model = "gpt-4o-mini",
+        messages = [
+            {
+                "role": "user",
+                "content": f"{prompt}: \n{full_text}"
+            }
+        ]
+    )
+
+    summary = response.choices[0].message.content
+    with open(os.path.join("transcriptions", filename + "_summary.txt"), "w") as f:
+        f.write(summary)
