@@ -1,0 +1,2 @@
+pyenv-venv activate audio
+python3 transcription.py --file data/Bilancio.m4a --lang it
